@@ -85,7 +85,7 @@ def iters_schedule_grid_search(model, config, n_iter=6, step=1, test_batch_size=
     assert len(exps[0]) == n_iter
     grid = []
     for exp in exps:
-        grid_ = [list(zip(x,exp)) for x in itertools.permutations(nums,len(exp))]
+        grid_ = [list(zip(x, exp)) for x in itertools.permutations(nums, len(exp))]
         grid.append([[item[0] * item[1] for item in betas] for betas in grid_])
     grid = np.concatenate(grid)[::step]
     show_message(f'Grid size: {grid.shape[0]}', verbose=verbose)
@@ -102,7 +102,7 @@ def iters_schedule_grid_search(model, config, n_iter=6, step=1, test_batch_size=
         window_fn=torch.hann_window
     ).to(device)
     dataset = AudioDataset(config, training=True)
-    idx = np.random.choice(range(len(dataset)), size=2, replace=False)
+    idx = np.random.choice(range(len(dataset)), size=test_batch_size, replace=False)
     test_batch = torch.stack([dataset[i] for i in idx]).to(device)
     test_mels = mel_fn(test_batch)
 
@@ -122,7 +122,7 @@ def iters_schedule_grid_search(model, config, n_iter=6, step=1, test_batch_size=
     best_idx = np.argmin(list(stats.values()))
     best_betas = grid[best_idx]
     show_message(f'Best betas on {n_iter} iterations: {best_betas}')
-    
+
     return best_betas, stats
 
 

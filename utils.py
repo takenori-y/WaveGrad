@@ -7,7 +7,7 @@ import torch
 
 
 def show_message(text, verbose=True, end='\n'):
-    if verbose: print(text, end=end)
+    if verbose: print(text, end=end, flush=True)
 
 
 def parse_filelist(filelist_path):
@@ -16,18 +16,23 @@ def parse_filelist(filelist_path):
     return filelist
 
 
-def latest_checkpoint_path(dir_path, regex="checkpoint_*.pt"):
+def latest_checkpoint_path(dir_path, regex='checkpoint_*.pt'):
     f_list = glob.glob(os.path.join(dir_path, regex))
-    f_list.sort(key=lambda f: int("".join(filter(str.isdigit, f))))
+    if len(f_list) == 0:
+        raise FileNotFoundError
+    f_list.sort(key=lambda f: int(''.join(filter(str.isdigit, f))))
     x = f_list[-1]
     return x
 
 
-def load_latest_checkpoint(logdir, model, optimizer=None):
-    latest_model_path = latest_checkpoint_path(logdir, regex="checkpoint_*.pt")
-    print(f'Latest checkpoint: {latest_model_path}')
+def load_latest_checkpoint(logdir, model, optimizer=None, itr=None):
+    if itr is None:
+        model_path = latest_checkpoint_path(logdir, regex='checkpoint_*.pt')
+        print(f'Latest checkpoint: {model_path}')
+    else:
+        model_path = os.path.join(logdir, 'checkpoint_' + str(itr) + '.pt')
     d = torch.load(
-        latest_model_path,
+        model_path,
         map_location=lambda loc, storage: loc
     )
     iteration = d['iteration']
@@ -63,7 +68,7 @@ def save_figure_to_numpy(fig):
 def plot_tensor_to_numpy(tensor):
     plt.style.use('default')
     fig, ax = plt.subplots(figsize=(12, 3))
-    im = ax.imshow(tensor, aspect="auto", origin="bottom", interpolation='none', cmap='hot')
+    im = ax.imshow(tensor, aspect='auto', origin='lower', interpolation='none', cmap='hot')
     plt.colorbar(im, ax=ax)
     plt.tight_layout()
 
@@ -76,14 +81,14 @@ def plot_tensor_to_numpy(tensor):
 class ConfigWrapper(object):
     """
     Wrapper dict class to avoid annoying key dict indexing like:
-    `config.sample_rate` instead of `config["sample_rate"]`.
+    `config.sample_rate` instead of `config['sample_rate']`.
     """
     def __init__(self, **kwargs):
         for k, v in kwargs.items():
             if type(v) == dict:
                 v = ConfigWrapper(**v)
             self[k] = v
-      
+
     def keys(self):
         return self.__dict__.keys()
 

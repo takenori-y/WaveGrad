@@ -42,7 +42,7 @@ class AudioDataset(torch.utils.data.Dataset):
                 but required {self.sample_rate} according config."""
 
         if not self.training:  # If test
-            return audio
+            return audio, audio_path
         # Take segment of audio for training
         if audio.shape[-1] >= self.segment_length:
             max_audio_start = audio.shape[-1] - self.segment_length
@@ -57,7 +57,7 @@ class AudioDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.audio_paths)
 
-    def sample_test_batch(self, size):
+    def sample_test_batch(self, size, shuffle=True):
         idx = np.random.choice(range(len(self)), size=size, replace=False)
         test_batch = []
         for index in idx:
@@ -70,7 +70,7 @@ class MelSpectrogramFixed(torch.nn.Module):
     def __init__(self, **kwargs):
         super(MelSpectrogramFixed, self).__init__()
         self.torchaudio_backend = MelSpectrogram(**kwargs)
-    
+
     def forward(self, x):
         outputs = self.torchaudio_backend(x)
         return outputs[..., :-1].log10()

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import json
 
@@ -15,8 +17,8 @@ from utils import ConfigWrapper, show_message
 
 def run(config, args):
     show_message('Initializing logger...', verbose=args.verbose)
-    logger = Logger(config)
-    
+    logger = Logger(config, args.expdir)
+
     show_message('Initializing model...', verbose=args.verbose)
     model = WaveGrad(config).cuda()
     show_message(f'Number of parameters: {model.nparams}', verbose=args.verbose)
@@ -86,7 +88,7 @@ def run(config, args):
             for batch in train_dataloader:
                 batch = batch.cuda()
                 mels = mel_fn(batch)
-                
+
                 # Training step
                 model.zero_grad()
                 loss = model.compute_loss(mels, batch)
@@ -101,7 +103,7 @@ def run(config, args):
                     'grad_norm': grad_norm.item()
                 }
                 logger.log_training(iteration, loss_stats, verbose=args.verbose)
-                
+
                 iteration += 1
 
             # Test step
@@ -118,7 +120,7 @@ def run(config, args):
                     # Calculate test set loss
                     test_loss = 0
                     for i, batch in enumerate(test_dataloader):
-                        batch = batch.cuda()
+                        batch = batch[0].cuda()
                         mels = mel_fn(batch)
                         test_loss_ = model.compute_loss(mels, batch)
                         test_loss += test_loss_
@@ -176,10 +178,11 @@ def run(config, args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config', required=True, type=str)
+    parser.add_argument('-e', '--expdir', required=True, type=str)
     parser.add_argument('-v', '--verbose', required=False, default=True, type=bool)
     args = parser.parse_args()
 
     with open(args.config) as f:
         config = ConfigWrapper(**json.load(f))
-    
+
     run(config, args)

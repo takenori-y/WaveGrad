@@ -8,11 +8,11 @@ from utils import show_message, load_latest_checkpoint, plot_tensor_to_numpy
 
 
 class Logger(SummaryWriter):
-    def __init__(self, config):
-        self.logdir = config.training_config.logdir
+    def __init__(self, config, logdir):
+        self.logdir = logdir
         self.continue_training = config.training_config.continue_training
         self.sample_rate = config.data_config.sample_rate
-        
+
         if not self.continue_training and os.path.exists(self.logdir):
             raise RuntimeError(
                 f"You're trying to run training from scratch, "
@@ -23,7 +23,7 @@ class Logger(SummaryWriter):
         super(Logger, self).__init__(self.logdir)
         with open(f'{self.logdir}/config.json', 'w') as f:
             json.dump(config.to_dict_type(), f)
-        
+
     def _log_losses(self, iteration, loss_stats: dict):
         for key, value in loss_stats.items():
             self.add_scalar(key, value, iteration)
@@ -43,7 +43,7 @@ class Logger(SummaryWriter):
             f'Epoch: {epoch} | Losses: {[value for value in stats.values()]}',
             verbose=verbose
         )
-    
+
     def log_audios(self, iteration, audios: dict):
         for key, audio in audios.items():
             self.add_audio(key, audio, iteration, sample_rate=self.sample_rate)
@@ -55,7 +55,7 @@ class Logger(SummaryWriter):
     def save_model_config(self, config):
         with open(f'{self.log_dir}/config.json', 'w') as f:
             json.dump(config, f)
-    
+
     def save_checkpoint(self, iteration, model, optimizer=None):
         d = {}
         d['iteration'] = iteration

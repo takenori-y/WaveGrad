@@ -179,7 +179,7 @@ class WaveGrad(BaseModule):
 
     def forward(self, mels, store_intermediate_states=False):
         self._verify_noise_schedule_existence()
-        
+
         return self.sample(
             mels, store_intermediate_states
         )
