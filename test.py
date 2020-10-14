@@ -5,13 +5,12 @@ import json
 import os
 
 import torch
+from torch.utils.data import DataLoader
 import torchaudio
-
-from tqdm import tqdm
 
 from model import WaveGrad
 from data import AudioDataset, MelSpectrogramFixed
-from benchmark import iters_schedule_grid_search
+from benchmark import estimate_average_rtf_on_filelist, iters_schedule_grid_search
 from utils import ConfigWrapper, load_latest_checkpoint, show_message
 
 
@@ -23,7 +22,8 @@ def run(config, args):
         args.expdir, model, itr=config.test_config.ckpt_num)
 
     test_dataset = AudioDataset(config, training=False)
-    test_batch = test_dataset.sample_test_batch(config.test_config.batch_size)
+    test_dataloader = DataLoader(test_dataset,
+                                 batch_size=config.test_config.batch_size)
     mel_fn = MelSpectrogramFixed(
         sample_rate=config.data_config.sample_rate,
         n_fft=config.data_config.n_fft,
@@ -36,9 +36,14 @@ def run(config, args):
     ).cuda()
 
     if config.test_config.linear:
-        schedule = {'init': torch.linspace,
-                    'init_kwargs': {'steps': config.test_config.n_iter,
-                                    'start': 1e-6, 'end': 1e-2}}
+        schedule = {
+            'init': torch.linspace,
+            'init_kwargs': {
+                'steps': config.test_config.n_iter,
+                'start': config.training_config.test_noise_schedule.betas_range[0],
+                'end': config.training_config.test_noise_schedule.betas_range[1]
+            }
+        }
     else:
         outdir = os.path.join(args.expdir, 'schedules')
         os.makedirs(outdir, exist_ok=True)
@@ -71,15 +76,23 @@ def run(config, args):
 
     outdir = os.path.join(args.expdir, 'wav')
     os.makedirs(outdir, exist_ok=True)
-    for test_sample in tqdm(test_batch):
+    for test_sample in test_dataloader:
         test_data, test_path = test_sample
-        mel = mel_fn(test_data[None].cuda())
+        test_path = test_path[0]
+        show_message('Processing ' + test_path + '...', verbose=args.verbose)
+        mel = mel_fn(test_data.cuda())
         outputs = model.forward(
             mel, store_intermediate_states=False
         )
         out_path = os.path.join(outdir, os.path.basename(test_path))
         torchaudio.save(out_path, outputs.squeeze().cpu(),
                         config.data_config.sample_rate)
+
+    if config.test_config.calc_rtf:
+        rtf_stats = estimate_average_rtf_on_filelist(
+            config.training_config.test_filelist_path,
+            config, model, verbose=args.verbose)
+        print(rtf_stats)
 
 
 if __name__ == '__main__':

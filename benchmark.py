@@ -29,9 +29,11 @@ def estimate_average_rtf_on_filelist(filelist_path, config, model, verbose=True)
         n_mels=config.data_config.n_mels,
         window_fn=torch.hann_window
     ).to(device)
+
+    show_message('Calculating RTF...')
     rtfs = []
     for i in (tqdm(range(len(dataset))) if verbose else range(len(dataset))):
-        datapoint = dataset[i].to(device)
+        datapoint = dataset[i][0].to(device)
         mel = mel_fn(datapoint)[None]
         start = datetime.now()
         sample = model.forward(mel, store_intermediate_states=False)
@@ -45,7 +47,7 @@ def estimate_average_rtf_on_filelist(filelist_path, config, model, verbose=True)
     std_rtf = np.std(rtfs)
 
     show_message(f'DEVICE: {device}. average_rtf={average_rtf}, std={std_rtf}', verbose=verbose)
-    
+
     rtf_stats = {
         'rtfs': rtfs,
         'average': average_rtf,

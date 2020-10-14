@@ -57,7 +57,7 @@ class AudioDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.audio_paths)
 
-    def sample_test_batch(self, size, shuffle=True):
+    def sample_test_batch(self, size):
         idx = np.random.choice(range(len(self)), size=size, replace=False)
         test_batch = []
         for index in idx:

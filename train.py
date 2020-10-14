@@ -55,36 +55,36 @@ def run(config, args):
     if config.training_config.continue_training:
         show_message('Loading latest checkpoint to continue training...', verbose=args.verbose)
         model, optimizer, iteration = logger.load_latest_checkpoint(model, optimizer)
-        epoch_size = len(train_dataset) // config.training_config.batch_size
-        epoch_start = iteration // epoch_size
     else:
         iteration = 0
-        epoch_start = 0
+    iteration += 1
+
+    model.set_new_noise_schedule(
+        init=torch.linspace,
+        init_kwargs={
+            'steps': config.training_config.training_noise_schedule.n_iter,
+            'start': config.training_config.training_noise_schedule.betas_range[0],
+            'end': config.training_config.training_noise_schedule.betas_range[1]
+        }
+    )
 
     # Log ground truth test batch
     audios = {
-        f'audio_{index}/gt': audio
+        f'audio_{index}/gt': audio[0]
         for index, audio in enumerate(test_batch)
     }
     logger.log_audios(0, audios)
     specs = {
-        f'mel_{index}/gt': mel_fn(audio.cuda()).cpu().squeeze()
+        f'mel_{index}/gt': mel_fn(audio[0].cuda()).cpu().squeeze()
         for index, audio in enumerate(test_batch)
     }
     logger.log_specs(0, specs)
 
-    show_message('Start training...', verbose=args.verbose)
+    show_message('Start training: ' + datetime.now().strftime('%Y/%m/%d %H:%M:%S'),
+                 verbose=args.verbose)
     try:
-        for epoch in range(epoch_start, config.training_config.n_epoch):
-            # Training step
-            model.set_new_noise_schedule(
-                init=torch.linspace,
-                init_kwargs={
-                    'steps': config.training_config.training_noise_schedule.n_iter,
-                    'start': config.training_config.training_noise_schedule.betas_range[0],
-                    'end': config.training_config.training_noise_schedule.betas_range[1]
-                }
-            )
+        halt = False
+        while not halt:
             for batch in train_dataloader:
                 batch = batch.cuda()
                 mels = mel_fn(batch)
@@ -104,75 +104,91 @@ def run(config, args):
                 }
                 logger.log_training(iteration, loss_stats, verbose=args.verbose)
 
-                iteration += 1
-
-            # Test step
-            if epoch % config.training_config.test_interval == 0:
-                model.set_new_noise_schedule(
-                    init=torch.linspace,
-                    init_kwargs={
-                        'steps': config.training_config.test_noise_schedule.n_iter,
-                        'start': config.training_config.test_noise_schedule.betas_range[0],
-                        'end': config.training_config.test_noise_schedule.betas_range[1]
-                    }
-                )
-                with torch.no_grad():
-                    # Calculate test set loss
-                    test_loss = 0
-                    for i, batch in enumerate(test_dataloader):
-                        batch = batch[0].cuda()
-                        mels = mel_fn(batch)
-                        test_loss_ = model.compute_loss(mels, batch)
-                        test_loss += test_loss_
-                    test_loss /= (i + 1)
-                    loss_stats = {'total_loss': test_loss.item()}
-
-                    # Restore random batch from test dataset
-                    audios = {}
-                    specs = {}
-                    test_l1_loss = 0
-                    test_l1_spec_loss = 0
-                    average_rtf = 0
-
-                    for index, test_sample in enumerate(test_batch):
-                        test_sample = test_sample[None].cuda()
-                        test_mel = mel_fn(test_sample.cuda())
-
-                        start = datetime.now()
-                        y_0_hat = model.forward(
-                            test_mel, store_intermediate_states=False
-                        )
-                        y_0_hat_mel = mel_fn(y_0_hat)
-                        end = datetime.now()
-                        generation_time = (end - start).total_seconds()
-                        average_rtf += compute_rtf(
-                            y_0_hat, generation_time, config.data_config.sample_rate
-                        )
-
-                        test_l1_loss += torch.nn.L1Loss()(y_0_hat, test_sample).item()
-                        test_l1_spec_loss += torch.nn.L1Loss()(y_0_hat_mel, test_mel).item()
-
-                        audios[f'audio_{index}/predicted'] = y_0_hat.cpu().squeeze()
-                        specs[f'mel_{index}/predicted'] = y_0_hat_mel.cpu().squeeze()
-
-                    average_rtf /= len(test_batch)
-                    show_message(f'Device: GPU. average_rtf={average_rtf}', verbose=args.verbose)
-
-                    test_l1_loss /= len(test_batch)
-                    loss_stats['l1_test_batch_loss'] = test_l1_loss
-                    test_l1_spec_loss /= len(test_batch)
-                    loss_stats['l1_spec_test_batch_loss'] = test_l1_spec_loss
-
-                    logger.log_test(epoch, loss_stats, verbose=args.verbose)
-                    logger.log_audios(epoch, audios)
-                    logger.log_specs(epoch, specs)
-
-                logger.save_checkpoint(iteration, model, optimizer)
-            if epoch % (epoch//10 + 1) == 0:
                 scheduler.step()
+
+                # Test step
+                if iteration % config.training_config.test_interval == 0:
+                    model.set_new_noise_schedule(
+                        init=torch.linspace,
+                        init_kwargs={
+                            'steps': config.training_config.test_noise_schedule.n_iter,
+                            'start': config.training_config.test_noise_schedule.betas_range[0],
+                            'end': config.training_config.test_noise_schedule.betas_range[1]
+                        }
+                    )
+
+                    with torch.no_grad():
+                        # Calculate test set loss
+                        test_loss = 0
+                        for i, batch in enumerate(test_dataloader):
+                            batch = batch[0].cuda()
+                            mels = mel_fn(batch)
+                            test_loss_ = model.compute_loss(mels, batch)
+                            test_loss += test_loss_
+                        test_loss /= (i + 1)
+                        loss_stats = {'total_loss': test_loss.item()}
+
+                        # Restore random batch from test dataset
+                        audios = {}
+                        specs = {}
+                        test_l1_loss = 0
+                        test_l1_spec_loss = 0
+                        average_rtf = 0
+
+                        for index, test_sample in enumerate(test_batch):
+                            test_sample = test_sample[0][None].cuda()
+                            test_mel = mel_fn(test_sample.cuda())
+
+                            start = datetime.now()
+                            y_0_hat = model.forward(
+                                test_mel, store_intermediate_states=False
+                            )
+                            y_0_hat_mel = mel_fn(y_0_hat)
+                            end = datetime.now()
+                            generation_time = (end - start).total_seconds()
+                            average_rtf += compute_rtf(
+                                y_0_hat, generation_time, config.data_config.sample_rate
+                            )
+
+                            test_l1_loss += torch.nn.L1Loss()(y_0_hat, test_sample).item()
+                            test_l1_spec_loss += torch.nn.L1Loss()(y_0_hat_mel, test_mel).item()
+
+                            audios[f'audio_{index}/predicted'] = y_0_hat.cpu().squeeze()
+                            specs[f'mel_{index}/predicted'] = y_0_hat_mel.cpu().squeeze()
+
+                        average_rtf /= len(test_batch)
+                        show_message(f'Device: GPU. average_rtf={average_rtf}', verbose=args.verbose)
+
+                        test_l1_loss /= len(test_batch)
+                        loss_stats['l1_test_batch_loss'] = test_l1_loss
+                        test_l1_spec_loss /= len(test_batch)
+                        loss_stats['l1_spec_test_batch_loss'] = test_l1_spec_loss
+
+                        logger.log_test(iteration, loss_stats, verbose=args.verbose)
+                        logger.log_audios(iteration, audios)
+                        logger.log_specs(iteration, specs)
+                        logger.save_checkpoint(iteration, model, optimizer)
+
+                    model.set_new_noise_schedule(
+                        init=torch.linspace,
+                        init_kwargs={
+                            'steps': config.training_config.training_noise_schedule.n_iter,
+                            'start': config.training_config.training_noise_schedule.betas_range[0],
+                            'end': config.training_config.training_noise_schedule.betas_range[1]
+                        }
+                    )
+
+                iteration += 1
+                if config.training_config.n_iter <= iteration:
+                    halt = True
+                    break
+
     except KeyboardInterrupt:
         print('KeyboardInterrupt: training has been stopped.')
         return
+
+    show_message('End training: ' + datetime.now().strftime('%Y/%m/%d %H:%M:%S'),
+                 verbose=args.verbose)
 
 
 if __name__ == '__main__':

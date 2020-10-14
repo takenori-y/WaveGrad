@@ -13,13 +13,8 @@ class Logger(SummaryWriter):
         self.continue_training = config.training_config.continue_training
         self.sample_rate = config.data_config.sample_rate
 
-        if not self.continue_training and os.path.exists(self.logdir):
-            raise RuntimeError(
-                f"You're trying to run training from scratch, "
-                f"but logdir `{self.logdir} already exists. Remove it or specify new one.`"
-            )
         if not self.continue_training:
-            os.makedirs(self.logdir)
+            os.makedirs(self.logdir, exist_ok=True)
         super(Logger, self).__init__(self.logdir)
         with open(f'{self.logdir}/config.json', 'w') as f:
             json.dump(config.to_dict_type(), f)
@@ -40,7 +35,7 @@ class Logger(SummaryWriter):
         stats = {f'test/{key}': value for key, value in stats.items()}
         self._log_losses(epoch, loss_stats=stats)
         show_message(
-            f'Epoch: {epoch} | Losses: {[value for value in stats.values()]}',
+            f'Validation | Losses: {[value for value in stats.values()]}',
             verbose=verbose
         )
 
